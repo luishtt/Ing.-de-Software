@@ -1,44 +1,49 @@
 <?php
-// Incluye la conexión a la base de datos
+session_start();
 include 'includes/db.php';
 
-// Inicia la sesion para manejar los usuarios
-session_start();
+$error = '';
 
-// Verifica si se envio del formulario
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Obtiene los datos del formulario con seguridad
-    $nombre = $_POST['nombre'] ?? null;
-    $email = $_POST['email'] ?? null;
-    $password = $_POST['password'] ?? null;
-
-    // Valida que todos los campos estén completos
+    $nombre = filter_input(INPUT_POST, 'nombre', FILTER_SANITIZE_STRING);
+    $email = filter_input(INPUT_POST, 'email', FILTER_SANITIZE_EMAIL);
+    $password = $_POST['password'] ?? '';
+    
     if (!empty($nombre) && !empty($email) && !empty($password)) {
-        try {
-            // Genera el hash de la contraseña
-            $passwordHash = password_hash($password, PASSWORD_DEFAULT);
-
-            // Consulta SQL para insertar el usuario
-            $sql = "INSERT INTO usuarios (nombre, email, password, tipo_usuario) 
-                    VALUES (:nombre, :email, :password, 'usuario')";
-            $stmt = $conn->prepare($sql);
-
-            // Ejecuta la consulta con los parametros
-            $stmt->execute([
-                ':nombre' => $nombre,
-                ':email' => $email,
-                ':password' => $passwordHash
-            ]);
-
-            // Redirige al usuario al inicio de sesión o muestra un mensaje de exito
-            echo "Registro exitoso. <a href='login.php'>Inicia sesión aquí</a>";
-        } catch (PDOException $e) {
-            // Maneja errores de la base de datos
-            echo "Error en el registro: " . $e->getMessage();
+        if (strlen($password) < 8) {
+            $error = "La contraseña debe tener al menos 8 caracteres";
+        } else {
+            try {
+                // Verificar si el email ya existe
+                $sql = "SELECT id FROM usuarios WHERE email = :email";
+                $stmt = $conn->prepare($sql);
+                $stmt->bindParam(':email', $email, PDO::PARAM_STR);
+                $stmt->execute();
+                
+                if ($stmt->rowCount() > 0) {
+                    $error = "El correo electrónico ya está registrado";
+                } else {
+                    $passwordHash = password_hash($password, PASSWORD_BCRYPT);
+                    
+                    $sql = "INSERT INTO usuarios (nombre, email, password) 
+                            VALUES (:nombre, :email, :password)";
+                    $stmt = $conn->prepare($sql);
+                    $stmt->bindParam(':nombre', $nombre, PDO::PARAM_STR);
+                    $stmt->bindParam(':email', $email, PDO::PARAM_STR);
+                    $stmt->bindParam(':password', $passwordHash, PDO::PARAM_STR);
+                    
+                    if ($stmt->execute()) {
+                        $_SESSION['registro_exitoso'] = true;
+                        header("Location: login.php");
+                        exit();
+                    }
+                }
+            } catch (PDOException $e) {
+                $error = "Error en el registro: " . $e->getMessage();
+            }
         }
     } else {
-        // Muestra un mensaje si faltan campos
-        echo "Por favor, completa todos los campos.";
+        $error = "Todos los campos son obligatorios";
     }
 }
 ?>
@@ -48,26 +53,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Registro de Usuario</title>
+    <title>Registro - Biblioteca Virtual</title>
     <link rel="stylesheet" href="assets/css/styles.css">
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>Registro de Usuario</h1>
-        </div>
-        <div class="content">
-            <form action="registro.php" method="POST">
-                <input type="text" name="nombre" placeholder="Nombre" required>
-                <input type="email" name="email" placeholder="Correo Electrónico" required>
-                <input type="password" name="password" placeholder="Contraseña" required>
-                <button type="submit" class="button primary">Registrarse</button>
-            </form>
-            <p>¿Ya tienes una cuenta? <a href="login.php">Inicia sesión</a>.</p>
-        </div>
-        <div class="footer">
-            <p>&copy; 2025 Biblioteca Virtual</p>
-        </div>
+    <div class="register-container">
+        <h1>Registro de Usuario</h1>
+        
+        <?php if (!empty($error)): ?>
+            <div class="alert error"><?= htmlspecialchars($error) ?></div>
+        <?php endif; ?>
+        
+        <form method="POST">
+            <div class="form-group">
+                <label for="nombre">Nombre Completo</label>
+                <input type="text" id="nombre" name="nombre" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="email">Correo Electrónico</label>
+                <input type="email" id="email" name="email" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Contraseña (mínimo 8 caracteres)</label>
+                <input type="password" id="password" name="password" minlength="8" required>
+            </div>
+            
+            <button type="submit" class="btn btn-primary">Registrarse</button>
+        </form>
+        
+        <p class="text-center">¿Ya tienes cuenta? <a href="login.php">Inicia sesión</a></p>
     </div>
 </body>
 </html>
